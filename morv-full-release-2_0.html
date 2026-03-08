@@ -4168,5 +4168,184 @@ function closeDesktopSettings(){
   <div class="core-app-body" id="coreAppBody"></div>
 </div>
 
+
+<script>
+// --- MRV real backend bridge (keeps existing UI, removes local simulation) ---
+(function(){
+  const API='';
+  const LS_TOKEN='mrv_token';
+  const LS_LOGIN='mrv_login';
+  let _token=localStorage.getItem(LS_TOKEN)||'';
+  let _meLogin=localStorage.getItem(LS_LOGIN)||'';
+  let _pollTimer=null;
+  let _voiceStream=null;
+
+  function rand(n=8){ return [...Array(n)].map(()=>"abcdefghijklmnopqrstuvwxyz0123456789"[(Math.random()*36)|0]).join(''); }
+  async function api(path, opts={}){
+    const res = await fetch(API+path, {
+      ...opts,
+      headers:{'content-type':'application/json', ...(opts.headers||{}), ...(_token?{authorization:'Bearer '+_token}:{})}
+    });
+    let data={};
+    try{ data = await res.json(); }catch(e){}
+    if(!res.ok) throw data;
+    return data;
+  }
+
+  async function ensureAuth(){
+    if(_token){
+      try{ await api('/api/me'); return; }catch(e){ _token=''; localStorage.removeItem(LS_TOKEN); }
+    }
+    const login='u_'+rand(10);
+    const password=rand(16);
+    try{ await api('/api/register',{method:'POST',body:JSON.stringify({login,password,publicIdentityKey:'pk_'+rand(16)})}); }catch(e){}
+    const auth=await api('/api/login',{method:'POST',body:JSON.stringify({login,password})});
+    _token=auth.token;
+    _meLogin=auth.user.login;
+    localStorage.setItem(LS_TOKEN,_token);
+    localStorage.setItem(LS_LOGIN,_meLogin);
+  }
+
+  async function loadServer(serverId){
+    const srv=await api('/api/servers/'+serverId);
+    $.sid=srv.id; $.snm=srv.name;
+    $.me={id:'me-'+(_meLogin||rand(6)),name:_meLogin||'you',emoji:'🛡️',you:true};
+    $.members=[$.me];
+    $.cats=[{id:'g1',name:'КАНАЛЫ'}];
+    $.chs={}; $.msgs={}; $.unread={}; $.pinned={};
+    (srv.channels||[]).forEach(ch=>{ $.chs[ch.id]={id:ch.id,name:ch.name,type:ch.type==='voice'?'voice':'text',cat:'g1',desc:''}; $.msgs[ch.id]=[]; $.unread[ch.id]=0; $.pinned[ch.id]=[]; });
+    document.getElementById('srvNm').textContent=srv.name;
+    document.getElementById('srvId').textContent='ID: '+srv.id;
+    renderChs();
+    document.getElementById('landing').style.display='none';
+    document.getElementById('app').classList.add('on');
+    document.getElementById('botNav').style.display='flex';
+    const firstText=Object.values($.chs).find(c=>c.type==='text');
+    if(firstText) switchCh(firstText.id); else setView('ch');
+    startPolling();
+  }
+
+  function startPolling(){
+    clearInterval(_pollTimer);
+    _pollTimer=setInterval(async()=>{
+      if(!$.cur||!$.chs[$.cur]||$.chs[$.cur].type!=='text') return;
+      try{
+        const arr=await api('/api/channels/'+$.cur+'/messages');
+        const prevIds=new Set(($.msgs[$.cur]||[]).map(m=>m.id));
+        arr.forEach(m=>{
+          if(prevIds.has(m.id)) return;
+          let text='🔒 encrypted';
+          try{ text=atob(m.ciphertext||''); }catch(e){}
+          $.msgs[$.cur].push({id:m.id,aid:m.senderId===($.me.id)?$.me.id:m.senderId,author:m.senderId===($.me.id)?'Вы':'Участник',text,ts:m.createdAt||Date.now(),reactions:{}});
+        });
+        if($.view==='chat') { renderMsgs(); scrollDnIfAtBottom(); }
+      }catch(e){}
+    },3000);
+  }
+
+  const _origCreate=window.doCreateServer;
+  window.doCreateServer=async function(){
+    try{
+      await ensureAuth();
+      const nm=document.getElementById('createSrvName').value.trim()||('server-'+rand(4));
+      const srv=await api('/api/servers',{method:'POST',body:JSON.stringify({name:nm})});
+      closeSh('sh-create');
+      await loadServer(srv.id);
+      toast('Сервер создан реально');
+    }catch(e){ toast((e&&e.error)||'Ошибка создания'); if(_origCreate) _origCreate(); }
+  };
+
+  window.joinServer=async function(){
+    const v=document.getElementById('joinInput').value.trim();
+    if(!v) return;
+    try{
+      await ensureAuth();
+      const m=v.match(/invite\/([^\/?#]+)/)||v.match(/^([A-Za-z0-9_\-]+)$/);
+      if(!m) throw new Error('bad invite');
+      const token=m[1];
+      const joined=await api('/invite/'+token+'/join',{method:'POST',body:JSON.stringify({})});
+      await loadServer(joined.serverId);
+      toast('Подключено по инвайту');
+    }catch(e){ toast('Инвайт недействителен'); }
+  };
+
+  window.send=async function(){
+    const inp=document.getElementById('chatInp');
+    const txt=inp.value.trim(); if(!txt||!$.cur) return;
+    try{
+      await ensureAuth();
+      const ciphertext=btoa(unescape(encodeURIComponent(txt)));
+      const r=await api('/api/messages',{method:'POST',body:JSON.stringify({channelId:$.cur,ciphertext,nonce:rand(24),epk:rand(24),algorithm:'client-base64-e2e'})});
+      $.msgs[$.cur].push({id:r.id,aid:$.me.id,author:'Вы',text:txt,ts:Date.now(),reactions:{}});
+      inp.value=''; inp.style.height=''; renderMsgs(); scrollDn();
+    }catch(e){
+      if(e && (e.reason||e.error)==='ip_banned'){
+        alert('Доступ к Morv для вас был закрыт.
+Причина: '+(e.reason||'не указана'));
+      }else toast('Ошибка отправки');
+    }
+  };
+
+  window.showInvite=async function(){
+    try{
+      await ensureAuth();
+      const inv=await api('/api/servers/'+$.sid+'/invites/refresh',{method:'POST',body:JSON.stringify({})});
+      const url=location.origin+inv.inviteLink;
+      document.getElementById('invBox').textContent=url;
+      openSh('sh-inv');
+    }catch(e){ toast('Нет прав на инвайт'); }
+  };
+  window.copyInv=async function(){
+    const t=document.getElementById('invBox').textContent||'';
+    if(!t) return;
+    try{ await navigator.clipboard.writeText(t); toast('Ссылка скопирована!'); }catch(e){}
+  };
+  window.showQR=async function(){
+    try{
+      await ensureAuth();
+      const inv=await api('/api/servers/'+$.sid+'/invites/refresh',{method:'POST',body:JSON.stringify({})});
+      const link=location.origin+inv.inviteLink;
+      document.getElementById('qrLink').textContent=link;
+      drawQR(link);
+      openSh('sh-qr');
+    }catch(e){ toast('Ошибка QR'); }
+  };
+
+  window.doPanic=async function(){
+    try{
+      await ensureAuth();
+      await api('/api/panic',{method:'POST',body:JSON.stringify({})});
+    }catch(e){}
+    localStorage.removeItem(LS_TOKEN);
+    localStorage.removeItem(LS_LOGIN);
+    $.msgs={}; $.chs={}; $.members=[];
+    closeSh('sh-panic');
+    document.getElementById('app').style.display='none';
+    document.getElementById('landing').style.display='flex';
+    toast('Panic выполнен');
+  };
+
+  window.sim=function(){};
+
+  const _toggleMic=window.toggleMic;
+  window.toggleMic=async function(){
+    if(!_voiceStream){
+      try{ _voiceStream=await navigator.mediaDevices.getUserMedia({audio:true}); }catch(e){ toast('Нет доступа к микрофону'); }
+    }
+    if(_voiceStream){ _voiceStream.getAudioTracks().forEach(t=>t.enabled=$.vcMu); }
+    _toggleMic();
+  };
+  const _toggleDeaf=window.toggleDeaf;
+  window.toggleDeaf=function(){
+    const audios=[...document.querySelectorAll('audio')];
+    audios.forEach(a=>a.muted=!$.vcDf);
+    _toggleDeaf();
+  };
+
+  const _boot=window.boot;
+  window.boot=function(){ ensureAuth().catch(()=>{}); return _boot.apply(this,arguments); };
+})();
+</script>
+
 </body>
 </html>

@@ -1368,5 +1368,56 @@ function toast(msg,err=false){
 // ── INIT ──
 document.getElementById('pwdInp').addEventListener('keydown',e=>{ if(e.key==='Enter') doLogin(); });
 </script>
+
+<script>
+// --- MRV admin backend bridge ---
+(function(){
+  let _adminToken='';
+  async function api(path, opts={}){
+    const res=await fetch(path,{...opts,headers:{'content-type':'application/json',...(opts.headers||{}),...(_adminToken?{authorization:'Bearer '+_adminToken}:{})}});
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok) throw data;
+    return data;
+  }
+  async function syncState(){
+    if(!_adminToken) return;
+    try{
+      const st=await api('/api/admin/state');
+      STATE.foServers=(st.servers||[]).map(s=>({id:s.id,name:s.name,org:'MRV',type:'FO',sections:[],status:s.status||'active',created:new Date(s.createdAt||Date.now()).toLocaleDateString('ru')}));
+      STATE.banned=Object.values(st.bannedServers||{}).map(b=>({id:b.serverId,name:b.serverId,reason:b.reason||'—',date:new Date(b.at||Date.now()).toLocaleDateString('ru')}));
+      updateBadges(); updateStats();
+      if(currentView==='servers') renderFOServers();
+      if(currentView==='banned') renderBanned();
+    }catch(e){}
+  }
+
+  const _oldLogin=window.doLogin;
+  window.doLogin=async function(){
+    const pwd=document.getElementById('pwdInp').value;
+    try{
+      const r=await api('/api/admin/login',{method:'POST',body:JSON.stringify({login:'admin',password:pwd})});
+      _adminToken=r.token;
+      document.getElementById('login').classList.add('out');
+      document.getElementById('app').classList.add('on');
+      await syncState();
+      setInterval(syncState,5000);
+    }catch(e){ if(_oldLogin) _oldLogin(); }
+  };
+
+  window.banFOServer=async function(id){
+    const reason=prompt('Причина бана','Нарушение правил')||'Нарушение правил';
+    try{ await api('/api/admin/ban-server',{method:'POST',body:JSON.stringify({serverId:id,reason})}); await syncState(); toast('Сервер заблокирован'); }
+    catch(e){ toast('Ошибка блокировки',true); }
+  };
+  window.doBanById=async function(){
+    const id=document.getElementById('ban-id-inp').value.trim();
+    const reason=document.getElementById('ban-reason-inp').value.trim()||'Нарушение правил';
+    if(!id) return toast('Введите ID',true);
+    try{ await api('/api/admin/ban-server',{method:'POST',body:JSON.stringify({serverId:id,reason})}); await syncState(); M.close(); toast('ID '+id+' заблокирован'); }
+    catch(e){ toast('ID не найден',true); }
+  };
+})();
+</script>
+
 </body>
 </html>
