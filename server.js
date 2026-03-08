@@ -204,8 +204,16 @@ const server = http.createServer(async (req, res) => {
     const t = url.pathname.split('/')[3];
     const inv = db.invites[t];
     if (!inv || inv.expiresAt < now()) return send(res, 404, { error: 'invite_not_found_or_expired' });
-    // Lightweight SVG "real" QR-compatible transport fallback: encoded link for client-side renderer.
     const link = `${url.protocol}//${url.host}/invite/${t}`;
+    try {
+      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=${encodeURIComponent(link)}`;
+      const qrRes = await fetch(qrUrl);
+      if (qrRes.ok) {
+        const buf = Buffer.from(await qrRes.arrayBuffer());
+        res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' });
+        return res.end(buf);
+      }
+    } catch (e) {}
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320"><rect width="100%" height="100%" fill="#fff"/><text x="10" y="40" font-size="14" fill="#000">SCAN LINK</text><text x="10" y="70" font-size="11" fill="#000">${link.replace(/&/g, '&amp;')}</text></svg>`;
     res.writeHead(200, { 'Content-Type': 'image/svg+xml; charset=utf-8' });
     return res.end(svg);
@@ -297,6 +305,20 @@ const server = http.createServer(async (req, res) => {
       bannedServers: db.bans.servers,
       audit: db.audit.slice(0, 200),
     });
+  }
+
+
+  if (req.method === 'POST' && url.pathname === '/api/admin/create-invite') {
+    const t = getAuthToken(req);
+    if (!t || !db.adminSessions[t]) return send(res, 401, { error: 'admin_unauthorized' });
+    const body = await parseBody(req);
+    const srv = db.servers[body.serverId || ''];
+    if (!srv) return send(res, 404, { error: 'server_not_found' });
+    const invToken = token();
+    const expiresAt = now() + 24 * 60 * 60 * 1000;
+    db.invites[invToken] = { token: invToken, serverId: srv.id, expiresAt, createdBy: 'admin', createdAt: now() };
+    saveDb();
+    return send(res, 200, { token: invToken, inviteLink: `/invite/${invToken}`, qrLink: `/api/invites/${invToken}/qr`, expiresAt });
   }
 
   if (req.method === 'POST' && url.pathname === '/api/admin/ban-server') {

@@ -433,6 +433,23 @@ function copyIdFallback(id){
     toast('ID скопирован');
   } catch(e){ toast('ID: '+id); }
 }
+
+async function copyServerInviteFromAdmin(serverId){
+  if(!serverId){ toast('Нет ID сервера', true); return; }
+  try{
+    const token=window.__mrvAdminToken||'';
+    if(!token){ toast('Сначала войдите в админку', true); return; }
+    const r=await fetch('/api/admin/create-invite',{method:'POST',headers:{'content-type':'application/json','authorization':'Bearer '+token},body:JSON.stringify({serverId})});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok||!d.inviteLink){ throw new Error('invite failed'); }
+    const full=location.origin+d.inviteLink;
+    if(navigator.clipboard&&navigator.clipboard.writeText) await navigator.clipboard.writeText(full);
+    toast('Инвайт скопирован');
+  }catch(e){
+    toast('Ошибка инвайта', true);
+  }
+}
+
 function nowDate(){ return new Date().toLocaleDateString('ru'); }
 function nowTS(){
   const d=new Date();
@@ -980,10 +997,12 @@ function renderOrgs(){
     </div>
     <div class="org-children" id="org-children-${i}">
       ${org.servers.map((srv,j)=>`
-        <div class="server-row">
+        <div class="server-row"
+          onmousedown="lpStart(event,()=>copyServerInviteFromAdmin('${srv.id||''}'))" onmouseup="lpEnd()" onmouseleave="lpEnd()"
+          ontouchstart="lpStart(event,()=>copyServerInviteFromAdmin('${srv.id||''}'))" ontouchend="lpEnd()" ontouchcancel="lpEnd()">
           <div style="flex:1">
             <div class="server-name">${esc(srv.name)}</div>
-            <div class="server-meta">ID: ${srv.id||'—'} · ${srv.type}</div>
+            <div class="server-meta">ID: ${srv.id||'—'} · ${srv.type} · удержи для инвайта</div>
           </div>
           <button class="act-btn danger" onclick="event.stopPropagation();removeOrgServer(${i},${j})" style="margin:0">Удалить</button>
         </div>`).join('')||'<div style="font-size:11px;color:var(--t3);padding:8px 0">Серверов нет</div>'}
@@ -1396,7 +1415,7 @@ document.getElementById('pwdInp').addEventListener('keydown',e=>{ if(e.key==='En
     const pwd=document.getElementById('pwdInp').value;
     try{
       const r=await api('/api/admin/login',{method:'POST',body:JSON.stringify({login:'admin',password:pwd})});
-      _adminToken=r.token;
+      _adminToken=r.token; window.__mrvAdminToken=_adminToken;
       document.getElementById('login').classList.add('out');
       document.getElementById('app').classList.add('on');
       await syncState();
