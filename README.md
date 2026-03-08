@@ -1,15 +1,9 @@
-# mrv
+ #MORV
 anon msngr
-diff --git a/README.md b/README.md
-index 9b2376b37e38e98be08cc19b337a6b07a5406b38..83a9744638d74e5520c9a9ffd37c7127505aac9c 100644
---- a/README.md
-+++ b/README.md
-@@ -1,2 +1,29 @@
- # mrv
--anon msngr
-+
+
+
 +Node.js backend for Morv messenger/admin bundle.
-+
+
 +## Run
 +
 +```bash
