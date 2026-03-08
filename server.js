@@ -72,6 +72,19 @@ function checkUser(req) {
   return { token: t, session: s, user: u, ip };
 }
 
+
+function contentTypeByExt(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === '.html') return 'text/html; charset=utf-8';
+  if (ext === '.js') return 'application/javascript; charset=utf-8';
+  if (ext === '.css') return 'text/css; charset=utf-8';
+  if (ext === '.json') return 'application/json; charset=utf-8';
+  if (ext === '.svg') return 'image/svg+xml';
+  if (ext === '.png') return 'image/png';
+  if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
+  return 'application/octet-stream';
+}
+
 function serveStatic(res, filePath, contentType = 'text/html; charset=utf-8') {
   if (!fs.existsSync(filePath)) return send(res, 404, { error: 'not_found' });
   res.writeHead(200, { 'Content-Type': contentType });
@@ -81,9 +94,16 @@ function serveStatic(res, filePath, contentType = 'text/html; charset=utf-8') {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
 
+  if (req.method === 'GET' && url.pathname === '/healthz') return send(res, 200, { ok: true, service: 'mrv' });
   if (req.method === 'GET' && url.pathname === '/') return serveStatic(res, path.join(__dirname, 'morv-full-release-2_0.html'));
   if (req.method === 'GET' && url.pathname === '/admmrv') return serveStatic(res, path.join(__dirname, 'morv-admin.html'));
   if (req.method === 'GET' && url.pathname.startsWith('/invite/')) return serveStatic(res, path.join(__dirname, 'morv-full-release-2_0.html'));
+  if (req.method === 'GET' && /^\/[\w.-]+$/.test(url.pathname)) {
+    const directPath = path.join(__dirname, url.pathname.slice(1));
+    if (fs.existsSync(directPath) && fs.statSync(directPath).isFile()) {
+      return serveStatic(res, directPath, contentTypeByExt(directPath));
+    }
+  }
 
   if (req.method === 'GET' && url.pathname === '/api/events') {
     const auth = checkUser(req);

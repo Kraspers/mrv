@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: mrv
+    env: node
+    plan: free
+    rootDir: .
+    buildCommand: "node -v"
+    startCommand: "npm start"
+    autoDeploy: true
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: 22.21.1
+      - key: MRV_ADMIN_LOGIN
+        sync: false
+      - key: MRV_ADMIN_PASSWORD
+        sync: false
