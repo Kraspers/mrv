@@ -1410,7 +1410,6 @@ document.getElementById('pwdInp').addEventListener('keydown',e=>{ if(e.key==='En
     }catch(e){}
   }
 
-  const _oldLogin=window.doLogin;
   window.doLogin=async function(){
     const pwd=document.getElementById('pwdInp').value;
     try{
@@ -1420,7 +1419,7 @@ document.getElementById('pwdInp').addEventListener('keydown',e=>{ if(e.key==='En
       document.getElementById('app').classList.add('on');
       await syncState();
       setInterval(syncState,5000);
-    }catch(e){ if(_oldLogin) _oldLogin(); }
+    }catch(e){ toast('Неверный пароль',true); }
   };
 
   window.banFOServer=async function(id){

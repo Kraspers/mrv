@@ -208,15 +208,13 @@ const server = http.createServer(async (req, res) => {
     try {
       const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=${encodeURIComponent(link)}`;
       const qrRes = await fetch(qrUrl);
-      if (qrRes.ok) {
-        const buf = Buffer.from(await qrRes.arrayBuffer());
-        res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' });
-        return res.end(buf);
-      }
-    } catch (e) {}
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320"><rect width="100%" height="100%" fill="#fff"/><text x="10" y="40" font-size="14" fill="#000">SCAN LINK</text><text x="10" y="70" font-size="11" fill="#000">${link.replace(/&/g, '&amp;')}</text></svg>`;
-    res.writeHead(200, { 'Content-Type': 'image/svg+xml; charset=utf-8' });
-    return res.end(svg);
+      if (!qrRes.ok) return send(res, 502, { error: 'qr_upstream_failed' });
+      const buf = Buffer.from(await qrRes.arrayBuffer());
+      res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' });
+      return res.end(buf);
+    } catch {
+      return send(res, 502, { error: 'qr_unavailable' });
+    }
   }
 
   if (req.method === 'POST' && /^\/invite\/[^/]+\/join$/.test(url.pathname)) {

@@ -4245,7 +4245,6 @@ function closeDesktopSettings(){
     },3000);
   }
 
-  const _origCreate=window.doCreateServer;
   window.doCreateServer=async function(){
     try{
       await ensureAuth();
@@ -4254,7 +4253,7 @@ function closeDesktopSettings(){
       closeSh('sh-create');
       await loadServer(srv.id);
       toast('Сервер создан реально');
-    }catch(e){ toast((e&&e.error)||'Ошибка создания'); if(_origCreate) _origCreate(); }
+    }catch(e){ toast((e&&e.error)||'Ошибка создания'); }
   };
 
   window.joinServer=async function(){
@@ -4262,13 +4261,20 @@ function closeDesktopSettings(){
     if(!v) return;
     try{
       await ensureAuth();
-      const m=v.match(/invite\/([^\/?#]+)/)||v.match(/^([A-Za-z0-9_\-]+)$/);
-      if(!m) throw new Error('bad invite');
+      const m=v.match(/\/invite\/([^\/?#]+)/)||v.match(/^([A-Za-z0-9_-]{20,})$/);
+      if(!m) throw { error:'invalid_invite_format' };
       const token=m[1];
       const joined=await api('/invite/'+token+'/join',{method:'POST',body:JSON.stringify({})});
       await loadServer(joined.serverId);
       toast('Подключено по инвайту');
-    }catch(e){ toast('Инвайт недействителен'); }
+    }catch(e){
+      const code=e&&e.error;
+      if(code==='invite_not_found_or_expired'||code==='server_not_found'||code==='invalid_invite_format'){
+        toast('Сервер не найден или некорректная ссылка');
+      }else{
+        toast('Ошибка входа по инвайту');
+      }
+    }
   };
 
   window.send=async function(){
@@ -4281,9 +4287,8 @@ function closeDesktopSettings(){
       $.msgs[$.cur].push({id:r.id,aid:$.me.id,author:'Вы',text:txt,ts:Date.now(),reactions:{}});
       inp.value=''; inp.style.height=''; renderMsgs(); scrollDn();
     }catch(e){
-      if(e && (e.reason||e.error)==='ip_banned'){
-        alert('Доступ к Morv для вас был закрыт.
-Причина: '+(e.reason||'не указана'));
+      if(e && (e.error==='ip_banned'||e.error==='user_banned')){
+        alert('Доступ к Morv для вас был закрыт.\nПричина: '+(e.reason||'не указана'));
       }else toast('Ошибка отправки');
     }
   };
@@ -4321,8 +4326,9 @@ function closeDesktopSettings(){
 
   window.doPanic=async function(){
     try{
-      await ensureAuth();
-      await api('/api/panic',{method:'POST',body:JSON.stringify({})});
+      if(_token){
+        await api('/api/panic',{method:'POST',body:JSON.stringify({})});
+      }
     }catch(e){}
     localStorage.removeItem(LS_TOKEN);
     localStorage.removeItem(LS_LOGIN);
@@ -4354,6 +4360,15 @@ function closeDesktopSettings(){
 
   const _boot=window.boot;
   window.boot=function(){ ensureAuth().catch(()=>{}); return _boot.apply(this,arguments); };
+
+  async function autoJoinFromInviteUrl(){
+    const m=location.pathname.match(/^\/invite\/([^\/?#]+)/);
+    if(!m) return;
+    const token=m[1];
+    document.getElementById('joinInput').value=location.origin+'/invite/'+token;
+    await window.joinServer();
+  }
+  autoJoinFromInviteUrl().catch(()=>{});
 })();
 </script>
 
