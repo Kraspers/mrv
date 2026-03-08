@@ -1701,7 +1701,7 @@ html, body {
     </div>
   </div>
 </div>
-    <div class="privacy-badge-sub">Скриншот заблокирован.<br>Содержимое защищено.</div>
+    
   </div>
 </div>
 <script>
@@ -3377,7 +3377,9 @@ function doPanic(){
   $.scheduled.forEach(s=>clearTimeout(s._timer));
   $.scheduled=[];
   closeSh('sh-panic');
-  document.getElementById('app').style.display='none';
+  const app=document.getElementById('app');
+  app.style.display='';
+  app.classList.remove('on');
   document.getElementById('landing').style.display='flex';
   toast('Данные удалены');
 }
@@ -4320,7 +4322,9 @@ function closeDesktopSettings(){
     localStorage.removeItem(LS_LOGIN);
     $.msgs={}; $.chs={}; $.members=[];
     closeSh('sh-panic');
-    document.getElementById('app').style.display='none';
+    const app=document.getElementById('app');
+    app.style.display='';
+    app.classList.remove('on');
     document.getElementById('landing').style.display='flex';
     toast('Panic выполнен');
   };
