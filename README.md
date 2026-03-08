@@ -1,2 +1,1 @@
-MORV
-anon msngr
+# Contents of README.md from the codex branch

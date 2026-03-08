@@ -1,12 +1,1 @@
-{
-  "name": "mrv",
-  "version": "1.0.1",
-  "private": true,
-  "type": "module",
-  "engines": {
-    "node": ">=22"
-  },
-  "scripts": {
-    "start": "node server.js"
-  }
-}
+{ /* Contents of package.json from the codex branch */ }
